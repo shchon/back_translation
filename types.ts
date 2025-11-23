@@ -54,5 +54,6 @@ export interface AIConfig {
   customBaseUrl?: string;
   customApiKey?: string;
   customModelName?: string;
-  provider?: 'gemini' | 'openai'; // New field
+  provider?: 'gemini' | 'openai'; 
+  customAnalysisPrompt?: string; // New field for custom prompt
 }

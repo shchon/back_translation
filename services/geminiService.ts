@@ -2,6 +2,37 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult, AIConfig } from "../types";
 
+// Default prompt template with {{nativeLanguage}} placeholder
+export const DEFAULT_ANALYSIS_PROMPT = `You are an expert English writing coach. The user is practicing "Back Translation". 
+
+1. The user started with an Original English Text.
+2. It was translated to their native language ({{nativeLanguage}}) (hidden from user).
+3. The user translated that back into English (User's Back-Translation).
+
+Compare the 'Original English Text' with the 'User's Back-Translation'.
+
+IMPORTANT GUIDELINES:
+1. Identify improvements. Always extract the **FULL SENTENCE** for both 'segment' (Original) and 'userVersion' (User's).
+2. The fields 'summary', 'strengths', 'reason', and 'meaning' MUST be written in {{nativeLanguage}}.
+3. 'betterAlternative' should be the English correction.
+
+Output JSON ONLY matching this structure:
+{
+  "score": number (0-100),
+  "summary": string ({{nativeLanguage}}),
+  "strengths": string[] ({{nativeLanguage}}),
+  "improvements": [
+    {
+      "segment": string (Full Original Sentence),
+      "meaning": string ({{nativeLanguage}} translation of segment),
+      "userVersion": string (Full User Sentence),
+      "betterAlternative": string (English correction),
+      "reason": string ({{nativeLanguage}} explanation),
+      "type": "grammar" | "vocabulary" | "style" | "nuance"
+    }
+  ]
+}`;
+
 // --- HELPER: Gemini Client ---
 const getGeminiClient = (config: AIConfig) => {
   const apiKey = (config.useCustom && config.customApiKey && config.customApiKey.trim() !== '') 
@@ -164,37 +195,10 @@ export const analyzeBackTranslation = async (
   config: AIConfig
 ): Promise<AnalysisResult> => {
   
-  const systemInstruction = `
-    You are an expert English writing coach. The user is practicing "Back Translation". 
-    
-    1. The user started with an Original English Text.
-    2. It was translated to their native language (${nativeLanguage}) (hidden from user).
-    3. The user translated that back into English (User's Back-Translation).
-    
-    Compare the 'Original English Text' with the 'User's Back-Translation'.
-    
-    IMPORTANT GUIDELINES:
-    1. Identify improvements. Always extract the **FULL SENTENCE** for both 'segment' (Original) and 'userVersion' (User's).
-    2. The fields 'summary', 'strengths', 'reason', and 'meaning' MUST be written in ${nativeLanguage}.
-    3. 'betterAlternative' should be the English correction.
-    
-    Output JSON ONLY matching this structure:
-    {
-      "score": number (0-100),
-      "summary": string (${nativeLanguage}),
-      "strengths": string[] (${nativeLanguage}),
-      "improvements": [
-        {
-          "segment": string (Full Original Sentence),
-          "meaning": string (${nativeLanguage} translation of segment),
-          "userVersion": string (Full User Sentence),
-          "betterAlternative": string (English correction),
-          "reason": string (${nativeLanguage} explanation),
-          "type": "grammar" | "vocabulary" | "style" | "nuance"
-        }
-      ]
-    }
-  `;
+  // Use custom prompt if available, otherwise use default.
+  // Replace {{nativeLanguage}} placeholder with actual language.
+  const promptTemplate = config.customAnalysisPrompt || DEFAULT_ANALYSIS_PROMPT;
+  const systemInstruction = promptTemplate.replace(/{{nativeLanguage}}/g, nativeLanguage);
 
   const userContent = `
     Original English Text:

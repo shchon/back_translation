@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AppStep, AnalysisResult, HistoryItem, VocabularyItem, Improvement, AIConfig } from './types';
-import { generateTargetTranslation, analyzeBackTranslation, generatePracticeContent, testConnection } from './services/geminiService';
+import { generateTargetTranslation, analyzeBackTranslation, generatePracticeContent, testConnection, DEFAULT_ANALYSIS_PROMPT } from './services/geminiService';
 import StepIndicator from './components/StepIndicator';
 import CoachChat from './components/CoachChat';
 import LibraryModal from './components/LibraryModal';
@@ -30,7 +30,8 @@ import {
   PlugZap,
   CheckCircle2,
   XCircle,
-  Zap
+  Zap,
+  FileEdit
 } from 'lucide-react';
 
 const LANGUAGES = [
@@ -68,7 +69,8 @@ const DEFAULT_CONFIG: AIConfig = {
   customBaseUrl: '',
   customApiKey: '',
   customModelName: 'gemini-2.5-flash',
-  provider: 'gemini'
+  provider: 'gemini',
+  customAnalysisPrompt: ''
 };
 
 const App: React.FC = () => {
@@ -89,7 +91,7 @@ const App: React.FC = () => {
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [aiConfig, setAiConfig] = useState<AIConfig>(DEFAULT_CONFIG);
-  const [settingsTab, setSettingsTab] = useState<'preset' | 'custom'>('preset');
+  const [settingsTab, setSettingsTab] = useState<'preset' | 'custom' | 'prompts'>('preset');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
 
   // Library State
@@ -218,6 +220,12 @@ const App: React.FC = () => {
     setTimeout(() => {
         if (success) setConnectionStatus('idle');
     }, 3000);
+  };
+
+  const handleResetPrompt = () => {
+    if (window.confirm("Are you sure you want to reset the prompt to default?")) {
+      setAiConfig(prev => ({ ...prev, customAnalysisPrompt: '' }));
+    }
   };
 
   // --- Workflow Handlers ---
@@ -394,10 +402,19 @@ const App: React.FC = () => {
             >
               <Server size={16} /> Custom Connection
             </button>
+            <button 
+               onClick={() => setSettingsTab('prompts')}
+               className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2
+                ${settingsTab === 'prompts' 
+                  ? 'bg-white text-brand-700 shadow-sm ring-1 ring-black/5' 
+                  : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <FileEdit size={16} /> Prompts
+            </button>
           </div>
           
-          <div className="p-6 overflow-y-auto">
-            {settingsTab === 'preset' ? (
+          <div className="p-6 overflow-y-auto flex-grow">
+            {settingsTab === 'preset' && (
               <div className="space-y-3">
                 <p className="text-sm text-gray-500 mb-2">Choose a pre-configured Gemini model.</p>
                 {PRESET_MODELS.map((model) => (
@@ -424,7 +441,9 @@ const App: React.FC = () => {
                   </div>
                 ))}
               </div>
-            ) : (
+            )}
+
+            {settingsTab === 'custom' && (
               <div className="space-y-5">
                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-xs text-blue-700 leading-relaxed mb-4">
                     Connect to any Gemini or OpenAI-compatible API. 
@@ -533,6 +552,38 @@ const App: React.FC = () => {
                         </span>
                     )}
                  </div>
+              </div>
+            )}
+
+            {settingsTab === 'prompts' && (
+              <div className="space-y-4 h-full flex flex-col">
+                <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 text-xs text-orange-700 leading-relaxed">
+                  <strong>Advanced:</strong> You can modify the system prompt used for analyzing your translations. 
+                  Use <code>{'{{nativeLanguage}}'}</code> as a placeholder for the selected target language.
+                  <br/>
+                  <strong>Warning:</strong> Ensure you maintain the JSON output structure instructions, or the app may fail to parse results.
+                </div>
+                
+                <div className="flex-grow flex flex-col">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                    <FileEdit size={16} className="text-gray-400" />
+                    Analysis System Prompt
+                  </label>
+                  <textarea 
+                    value={aiConfig.customAnalysisPrompt || DEFAULT_ANALYSIS_PROMPT}
+                    onChange={(e) => setAiConfig(prev => ({ ...prev, customAnalysisPrompt: e.target.value }))}
+                    className="w-full flex-grow min-h-[300px] p-4 rounded-xl border border-gray-200 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm font-mono text-gray-600 leading-relaxed resize-none"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <button 
+                    onClick={handleResetPrompt}
+                    className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    Reset to Default
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -736,31 +787,34 @@ const App: React.FC = () => {
                       return (
                         <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
                             <div className="grid md:grid-cols-12 gap-0">
-                                {/* Left: The Change */}
+                                {/* Left: Comparison Column */}
                                 <div className="md:col-span-5 bg-gray-50 p-6 border-b md:border-b-0 md:border-r border-gray-100 flex flex-col justify-center relative group">
                                     <div className="mb-4">
-                                        <span className="text-xs font-bold text-red-500 uppercase mb-1 block">You Wrote</span>
+                                        {/* 1. Meaning (Native) - Moved to Top */}
+                                        <p className="text-sm text-gray-500 mb-3 italic leading-relaxed">"{item.meaning}"</p>
+
+                                        {/* 2. User Error - Middle (Label Removed) */}
                                         <p className="text-gray-800 font-medium underline decoration-red-500 decoration-wavy decoration-2 underline-offset-4 leading-relaxed">{item.userVersion}</p>
-                                        {/* NATIVE MEANING DISPLAYED HERE */}
-                                        <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{item.meaning}</p>
                                     </div>
                                     <div>
                                         <div className="flex justify-between items-start">
-                                          <span className="text-xs font-bold text-green-600 uppercase mb-1 block">Better Alternative</span>
+                                          {/* 3. Better Alternative - Bottom (Label Removed) */}
+                                          <div className="flex-grow">
+                                            <p className="text-gray-900 font-medium bg-green-100 inline-block px-2 py-1 rounded leading-relaxed">{item.betterAlternative}</p>
+                                          </div>
                                           <button 
                                             onClick={() => !isSaved && addToVocabulary(item)}
                                             disabled={isSaved}
-                                            className={`p-1 rounded-md transition-colors ${isSaved ? 'text-brand-600' : 'text-gray-400 hover:text-brand-600 hover:bg-brand-100'}`}
+                                            className={`p-1 rounded-md transition-colors flex-shrink-0 ml-2 ${isSaved ? 'text-brand-600' : 'text-gray-400 hover:text-brand-600 hover:bg-brand-100'}`}
                                             title="Save to Vocabulary"
                                           >
-                                            {isSaved ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
+                                            {isSaved ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
                                           </button>
                                         </div>
-                                        <p className="text-gray-900 font-medium bg-green-100 inline-block px-1 rounded">{item.betterAlternative}</p>
                                     </div>
                                 </div>
                                 
-                                {/* Right: The Reason */}
+                                {/* Right: Explanation Column */}
                                 <div className="md:col-span-7 p-6 flex flex-col justify-center">
                                     <div className="flex items-center gap-2 mb-2">
                                         <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full border
@@ -771,16 +825,10 @@ const App: React.FC = () => {
                                             {item.type}
                                         </span>
                                     </div>
-                                    <p className="text-gray-600 text-sm leading-relaxed mb-3">
+                                    <p className="text-gray-600 text-sm leading-relaxed">
                                         <span className="font-semibold text-gray-900">Why? </span>
                                         {item.reason}
                                     </p>
-                                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                        <p className="text-xs text-gray-500 italic">
-                                            <span className="font-semibold not-italic text-gray-600">Original Context: </span>
-                                            "...{item.segment}..."
-                                        </p>
-                                    </div>
                                 </div>
                             </div>
                         </div>
